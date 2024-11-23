@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -18,11 +19,10 @@ type Quiz struct {
 	Questions       chan Question
 	Counter         int
 	ProcessDone     chan bool
-	InterruptAnswer chan bool
+	InterruptAnswer chan struct{}
 }
 
 func main() {
-
 	csvFilename := flag.String("csv", "problems.csv", "a csv file in the format of 'question,answer'")
 	timeLimit := flag.Int("limit", 30, "the time limit for the quiz in seconds")
 	flag.Parse()
@@ -60,7 +60,7 @@ func NewQuiz() *Quiz {
 	return &Quiz{
 		Questions:       make(chan Question, 3),
 		ProcessDone:     make(chan bool, 1),
-		InterruptAnswer: make(chan bool, 1),
+		InterruptAnswer: make(chan struct{}, 1),
 	}
 }
 
@@ -96,13 +96,14 @@ func (quiz *Quiz) start(defaultTime int) {
 	go func() {
 		time.Sleep(time.Duration(defaultTime) * time.Second)
 		quiz.ProcessDone <- true
-		quiz.InterruptAnswer <- true
+		quiz.InterruptAnswer <- struct{}{}
 	}()
 }
 
 func (quiz *Quiz) askQuestion(q Question) bool {
 	fmt.Printf("Problem: %s = ", q.Question)
 	answerCh := make(chan string)
+
 	go func() {
 		var answer string
 		fmt.Scanf("%s\n", &answer)
@@ -111,9 +112,11 @@ func (quiz *Quiz) askQuestion(q Question) bool {
 
 	select {
 	case <-quiz.InterruptAnswer:
-		fmt.Println("Interupt!")
+		fmt.Println("\nTime's up!")
 		return false
 	case input := <-answerCh:
-		return input == q.Answer
+		// Compare sanitized input with the correct answer
+		input = strings.TrimSpace(strings.ToLower(input))
+		return input == strings.ToLower(q.Answer)
 	}
 }
