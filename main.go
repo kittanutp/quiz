@@ -15,10 +15,10 @@ type Question struct {
 }
 
 type Quiz struct {
-	Questions chan Question
-	Counter   int
-	Done      chan bool
-	Timer     *time.Timer
+	Questions       chan Question
+	Counter         int
+	ProcessDone     chan bool
+	InterruptAnswer chan bool
 }
 
 func main() {
@@ -35,16 +35,14 @@ func main() {
 	fmt.Println("Press Any Key to start quiz")
 	fmt.Scanln(&i)
 
-	fmt.Printf("Quiz will take %v seconds\n", *timeLimit)
-	quiz.Timer = time.NewTimer(time.Duration(*timeLimit) * time.Second)
+	quiz.start(*timeLimit)
 
-problemloop:
 	for {
 		select {
-		case <-quiz.Timer.C:
+		case <-quiz.ProcessDone:
 			fmt.Println("\nTime's up!")
 			fmt.Println("Total Score:", quiz.Counter)
-			break problemloop
+			return
 		case q, ok := <-quiz.Questions:
 			if !ok {
 				fmt.Println("Quiz completed!")
@@ -60,7 +58,9 @@ problemloop:
 
 func NewQuiz() *Quiz {
 	return &Quiz{
-		Questions: make(chan Question, 3),
+		Questions:       make(chan Question, 3),
+		ProcessDone:     make(chan bool, 1),
+		InterruptAnswer: make(chan bool, 1),
 	}
 }
 
@@ -91,28 +91,29 @@ func (quiz *Quiz) createQuizFromCSV(csvFilename string) {
 	close(quiz.Questions)
 }
 
-func (quiz *Quiz) askQuestion(q Question) bool {
-	fmt.Printf("Q >> %v\n", q.Question)
-	fmt.Print("Your Answer: ")
-
-	answerReceived := make(chan string, 1)
+func (quiz *Quiz) start(defaultTime int) {
+	fmt.Printf("Quiz will take %v seconds\n", defaultTime)
 	go func() {
-		var input string
-		fmt.Scanln(&input)
-		answerReceived <- input
+		time.Sleep(time.Duration(defaultTime) * time.Second)
+		quiz.ProcessDone <- true
+		quiz.InterruptAnswer <- true
+	}()
+}
+
+func (quiz *Quiz) askQuestion(q Question) bool {
+	fmt.Printf("Problem: %s = ", q.Question)
+	answerCh := make(chan string)
+	go func() {
+		var answer string
+		fmt.Scanf("%s\n", &answer)
+		answerCh <- answer
 	}()
 
 	select {
-	case <-quiz.Timer.C:
-		quiz.Done <- true
+	case <-quiz.InterruptAnswer:
 		fmt.Println("Interupt!")
 		return false
-	case input := <-answerReceived:
-		if input == q.Answer {
-			fmt.Println("Your Answer is correct")
-			return true
-		}
-		fmt.Println("Your Answer is wrong")
-		return false
+	case input := <-answerCh:
+		return input == q.Answer
 	}
 }
