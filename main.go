@@ -16,10 +16,9 @@ type Question struct {
 }
 
 type Quiz struct {
-	Questions       chan Question
-	Counter         int
-	ProcessDone     chan bool
-	InterruptAnswer chan struct{}
+	Questions   chan Question
+	Counter     int
+	ProcessDone chan struct{}
 }
 
 func main() {
@@ -44,6 +43,7 @@ func main() {
 			fmt.Println("Total Score:", quiz.Counter)
 			return
 		case q, ok := <-quiz.Questions:
+
 			if !ok {
 				fmt.Println("Quiz completed!")
 				fmt.Println("Total Score:", quiz.Counter)
@@ -58,9 +58,8 @@ func main() {
 
 func NewQuiz() *Quiz {
 	return &Quiz{
-		Questions:       make(chan Question, 3),
-		ProcessDone:     make(chan bool, 1),
-		InterruptAnswer: make(chan struct{}, 1),
+		Questions:   make(chan Question, 5),
+		ProcessDone: make(chan struct{}),
 	}
 }
 
@@ -76,7 +75,8 @@ func (quiz *Quiz) createQuizFromCSV(csvFilename string) {
 		record, err := reader.Read()
 		if err != nil {
 			if err.Error() == "EOF" {
-				break
+				close(quiz.Questions)
+				return
 			}
 			log.Fatal("Error while reading the file", err)
 		}
@@ -88,15 +88,13 @@ func (quiz *Quiz) createQuizFromCSV(csvFilename string) {
 			Answer:   record[1],
 		}
 	}
-	close(quiz.Questions)
 }
 
 func (quiz *Quiz) start(defaultTime int) {
 	fmt.Printf("Quiz will take %v seconds\n", defaultTime)
 	go func() {
 		time.Sleep(time.Duration(defaultTime) * time.Second)
-		quiz.ProcessDone <- true
-		quiz.InterruptAnswer <- struct{}{}
+		close(quiz.ProcessDone)
 	}()
 }
 
@@ -111,8 +109,7 @@ func (quiz *Quiz) askQuestion(q Question) bool {
 	}()
 
 	select {
-	case <-quiz.InterruptAnswer:
-		fmt.Println("\nTime's up!")
+	case <-quiz.ProcessDone:
 		return false
 	case input := <-answerCh:
 		// Compare sanitized input with the correct answer
