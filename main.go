@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/csv"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -30,9 +32,8 @@ func main() {
 
 	go quiz.createQuizFromCSV(*csvFilename)
 
-	var i string
-	fmt.Println("Press Any Key to start quiz")
-	fmt.Scanln(&i)
+	fmt.Println("Press Enter to start the quiz...")
+	fmt.Scanln()
 
 	quiz.start(*timeLimit)
 
@@ -74,11 +75,11 @@ func (quiz *Quiz) createQuizFromCSV(csvFilename string) {
 	for {
 		record, err := reader.Read()
 		if err != nil {
-			if err.Error() == "EOF" {
+			if errors.Is(err, io.EOF) {
 				close(quiz.Questions)
 				return
 			}
-			log.Fatal("Error while reading the file", err)
+			log.Fatalf("Error while reading the file: %v", err)
 		}
 		if len(record) != 2 {
 			continue
@@ -104,8 +105,8 @@ func (quiz *Quiz) askQuestion(q Question) bool {
 
 	go func() {
 		var answer string
-		fmt.Scanf("%s\n", &answer)
-		answerCh <- answer
+		fmt.Scanln(&answer)
+		answerCh <- strings.TrimSpace(strings.ToLower(answer))
 	}()
 
 	select {
